@@ -305,9 +305,14 @@ def run_discovery() -> None:
 
 
 def refresh_metrics() -> None:
-    """Pull fresh engagement for recently posted items and learn from it."""
+    """Pull fresh engagement for recently posted items and learn from it.
+
+    Only polls posts younger than ``metrics_max_age_hours`` -- older posts have
+    essentially stopped changing, so re-reading them just wastes API credit.
+    """
     client = get_client()
-    cutoff = _now() - timedelta(days=7)
+    max_age_h = float(settings_store.get("metrics_max_age_hours", 48))
+    cutoff = _now() - timedelta(hours=max_age_h)
     with session_scope() as s:
         rows = list(
             s.execute(

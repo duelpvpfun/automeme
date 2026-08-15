@@ -64,7 +64,11 @@ DEFAULTS: dict[str, Any] = {
     # Resilience
     "max_consecutive_errors": 5,       # auto-shutdown (kill_switch) after this many
     "discovery_interval_minutes": 30,
-    "metrics_refresh_hours": 6,
+    # Learning is not time-critical, so poll engagement sparingly to save API
+    # credit: once a day, and only for posts younger than metrics_max_age_hours
+    # (older posts barely change). This keeps read-call volume very low.
+    "metrics_refresh_hours": 24,
+    "metrics_max_age_hours": 48,
 
     # X discovery (pay-per-use: reads cost credit). Off unless enabled here AND
     # read credentials exist. max_results caps credit spend per cycle.

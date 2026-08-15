@@ -151,6 +151,8 @@ const SETTING_FIELDS = [
   ["max_same_subject_per_day", "Max same subject / day", "number"],
   ["max_consecutive_errors", "Auto-shutdown after N errors", "number"],
   ["discovery_interval_minutes", "Discovery interval (min)", "number"],
+  ["metrics_refresh_hours", "Metrics poll every (hours)", "number"],
+  ["metrics_max_age_hours", "Stop tracking posts after (hours)", "number"],
   ["allowed_subjects", "Allowed subjects (comma sep, blank=all)", "csv"],
 ];
 
