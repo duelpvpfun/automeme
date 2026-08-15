@@ -212,4 +212,16 @@ def create_app(start_scheduler: bool = True) -> FastAPI:
         from .. import simulate as sim
         return sim.to_dicts(sim.simulate(days=max(1, min(days, 14))))
 
+    @app.get("/api/diagnose", dependencies=api_dep)
+    def api_diagnose():
+        return service.diagnose()
+
+    @app.post("/api/actions/discover", dependencies=api_dep)
+    def api_force_discover():
+        return service.force_discovery()
+
+    @app.post("/api/actions/post_now", dependencies=api_dep)
+    def api_force_post():
+        return service.force_post()
+
     return app

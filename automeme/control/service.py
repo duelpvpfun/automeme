@@ -59,6 +59,41 @@ def dashboard_stats() -> dict:
     }
 
 
+def diagnose() -> dict:
+    """Explain, in one call, why it is or isn't posting right now."""
+    from .. import scheduler
+    ok, reason = scheduler._should_post_now()
+    with session_scope() as s:
+        queued = s.execute(
+            select(func.count()).select_from(Candidate).where(
+                Candidate.status == CandidateStatus.QUEUED.value
+            )
+        ).scalar_one()
+    return {
+        "can_post_now": ok,
+        "reason": reason,
+        "queued": queued,
+        "hint": (
+            "Queue is empty -- discovery hasn't produced postable candidates yet."
+            if queued == 0 else
+            ("Ready -- next 5-min tick should post." if ok else f"Blocked: {reason}")
+        ),
+    }
+
+
+def force_discovery() -> dict:
+    """Run one discovery cycle right now (manual trigger)."""
+    from .. import pipeline
+    return pipeline.ingest()
+
+
+def force_post() -> dict:
+    """Attempt to post one right now, bypassing spacing (manual trigger)."""
+    from .. import scheduler
+    posted = scheduler.post_one()
+    return {"posted": posted, **diagnose()}
+
+
 # -- candidate listings ------------------------------------------------------
 
 

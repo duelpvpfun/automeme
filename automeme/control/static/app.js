@@ -293,8 +293,33 @@ document.getElementById("btnMode").onclick = async () => {
   loadStats();
 };
 
+async function loadDiagnose() {
+  const d = await api("/api/diagnose");
+  if (!d) return;
+  const el = document.getElementById("diagLine");
+  el.className = "banner " + (d.can_post_now ? "good" : (d.queued === 0 ? "warn" : "warn"));
+  el.innerHTML = `🔧 <span>Queue: <b>${d.queued}</b> ready · ${d.hint}</span>`;
+}
+
+document.getElementById("btnDiscover").onclick = async () => {
+  const el = document.getElementById("diagLine");
+  el.className = "banner warn"; el.innerHTML = "🔍 <span>Finding memes… (10-20s)</span>";
+  const r = await api("/api/actions/discover", { method: "POST" });
+  el.innerHTML = `🔍 <span>Discovery done: ${JSON.stringify(r)}</span>`;
+  loadStats(); loadDiagnose();
+};
+document.getElementById("btnPostNow").onclick = async () => {
+  const el = document.getElementById("diagLine");
+  el.className = "banner warn"; el.innerHTML = "📤 <span>Posting one now…</span>";
+  const r = await api("/api/actions/post_now", { method: "POST" });
+  el.innerHTML = r.posted
+    ? "✅ <span>Posted! Check @icr8meme and the Posted tab.</span>"
+    : `⚠️ <span>Did not post: ${r.reason || r.hint}</span>`;
+  loadStats();
+};
+
 function loadTab(tab) {
-  if (tab === "dashboard") loadStats();
+  if (tab === "dashboard") { loadStats(); loadDiagnose(); }
   else if (tab === "preview") runSimulation();
   else if (tab === "review") loadReview();
   else if (tab === "posted") loadPosted();
