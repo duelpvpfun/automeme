@@ -88,9 +88,12 @@ class XClient:
         self._ensure_write()
         try:
             media = self._api_v1.media_upload(filename=local_path)  # type: ignore
+            # Use the STRING media id: the numeric id overflows in the v2 API and
+            # triggers "Your media IDs are invalid".
+            media_id = getattr(media, "media_id_string", None) or str(media.media_id)
             resp = self._client_v2.create_tweet(  # type: ignore
                 text=caption or None,
-                media_ids=[media.media_id],
+                media_ids=[media_id],
             )
             post_id = str(resp.data["id"])
         except Exception as exc:  # noqa: BLE001
