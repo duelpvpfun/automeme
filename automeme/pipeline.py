@@ -97,6 +97,13 @@ def ingest(limit_per_source: int = 60) -> dict:
 
     bl = _load_blocklist()
     sources = get_enabled_sources(blocked_sources=bl["source"])
+    # Source priority: prefer real daily-top feeds (reddit_rss / reddit_api) and
+    # only fall back to meme-api (a small fixed 'hot' cache that repeats) when the
+    # primary sources didn't produce enough variety.
+    _priority = {"reddit_api": 0, "reddit_rss": 1, "x": 2, "reddit": 3, "memeapi": 9}
+    sources = sorted(sources, key=lambda s: _priority.get(getattr(s, "name", ""), 5))
+    fallback_names = {"memeapi"}
+    enough_from_primary = 4  # skip repetitive meme-api once RSS gave a few items
     min_source_score = int(settings_store.get("min_source_score", 500))
     min_quality = float(settings_store.get("min_quality_score", 55.0))
     max_age_h = float(settings_store.get("max_content_age_hours", 24))
@@ -114,6 +121,11 @@ def ingest(limit_per_source: int = 60) -> dict:
     }
 
     for source in sources:
+        # Skip the repetitive fallback source if primary feeds already gave us
+        # plenty of fresh candidates this cycle.
+        if getattr(source, "name", "") in fallback_names and \
+                summary["accepted"] >= enough_from_primary:
+            continue
         try:
             items = source.fetch(limit=limit_per_source)
         except Exception as exc:  # noqa: BLE001

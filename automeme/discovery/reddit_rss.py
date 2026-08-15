@@ -45,12 +45,40 @@ def _first_image(content_html: str) -> str:
 class RedditRssSource:
     name = "reddit_rss"
 
+    # Broader list than meme-api for real variety (day's top across many subs).
+    _RSS_SUBREDDITS = (
+        # memes / humor
+        "memes", "dankmemes", "me_irl", "wholesomememes", "funny", "MemeEconomy",
+        "AdviceAnimals", "facepalm", "clevercomebacks", "meirl", "comedyheaven",
+        "terriblefacebookmemes", "bonehurtingjuice", "okbuddyretard",
+        # cute animals
+        "aww", "rarepuppers", "cats", "AnimalsBeingDerps", "Eyebleach",
+        "dogpictures", "shibe", "shibainu", "IllegallySmolCats", "babyelephantgifs",
+        "AnimalsBeingBros", "goldenretrievers",
+    )
+
+    # Round-robin cursor so each cycle hits only a few subreddits (Reddit rate-
+    # limits datacenter IPs hard; hitting all 24 x2 listings per cycle gets us
+    # throttled and forces the repetitive meme-api fallback).
+    _cursor = 0
+    _BATCH = 8  # subreddits per cycle
+
     def __init__(self, subreddits: tuple[str, ...] | None = None,
-                 listings: tuple[str, ...] = ("top", "hot")):
-        # "top" (t=day) = the day's most-upvoted posts, already ranked by score;
-        # "hot" catches things still climbing. Together = best-of-day performers.
-        self.subreddits = tuple(subreddits or DEFAULT_SUBREDDITS)
+                 listings: tuple[str, ...] = ("top",)):
+        # "top" (t=day) = the day's most-upvoted posts, already ranked by score.
+        self.subreddits = tuple(subreddits or self._RSS_SUBREDDITS)
         self.listings = listings
+
+    def _batch(self) -> tuple[str, ...]:
+        """Return the next rotating slice of subreddits for this cycle."""
+        subs = self.subreddits
+        if len(subs) <= self._BATCH:
+            return subs
+        cls = type(self)
+        start = cls._cursor % len(subs)
+        picked = [subs[(start + i) % len(subs)] for i in range(self._BATCH)]
+        cls._cursor = (start + self._BATCH) % len(subs)
+        return tuple(picked)
 
     def _get_feed_bytes(self, client: httpx.Client, url: str) -> bytes | None:
         """Fetch a feed with a couple of polite retries. Reddit rate-limits
@@ -136,7 +164,7 @@ class RedditRssSource:
         out: dict[str, DiscoveredItem] = {}
         try:
             with httpx.Client(headers=headers, timeout=15.0, follow_redirects=True) as client:
-                for sub in self.subreddits:
+                for sub in self._batch():
                     for listing in self.listings:
                         try:
                             for item in self._fetch_feed(client, sub, listing, max_age_h):
