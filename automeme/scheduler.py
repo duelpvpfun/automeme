@@ -16,9 +16,14 @@ control panel can change behavior live.
 from __future__ import annotations
 
 import random
+import threading
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
+
+# Serialize posting: boot cycle, the 5-min tick, and the manual "Post now" button
+# must never post concurrently (that caused the same meme to go out twice).
+_post_lock = threading.Lock()
 
 from . import captioning, categories, dedup, learning, pipeline, settings_store
 from .activity import log
@@ -198,35 +203,45 @@ def _pick_candidate() -> Candidate | None:
             ).scalars()
         )
 
-        def eligible(c: Candidate) -> bool:
+        def fresh(c: Candidate) -> bool:
             created = c.created_at
             if created and created.tzinfo is None:
                 created = created.replace(tzinfo=timezone.utc)
-            if created and created < ttl_cutoff:
-                return False  # stale queue entry -> skip (will be trimmed)
-            return (
+            return not (created and created < ttl_cutoff)
+
+        def eligible(c: Candidate) -> bool:
+            # Diversity caps are a soft preference: they must never make the bot
+            # go completely silent, so if NOTHING passes them we relax below.
+            return fresh(c) and (
                 _get_count("source", c.source) < max_src
                 and _get_count("subject", c.subject) < max_subj
             )
 
-        strict = bool(settings_store.get("strict_alternate", True))
+        # If diversity caps would block the entire fresh queue, ignore them for
+        # this pick (better to post a good meme than nothing).
+        if not any(eligible(c) for c in rows):
+            eligible = fresh  # noqa: F811 -- intentional relaxation
 
-        # Pass 1: the preferred (opposite) category, best quality first.
+        def claim(c: Candidate) -> Candidate:
+            # Atomically take the row within THIS transaction so a concurrent
+            # picker can't grab the same candidate (prevents double-posting).
+            c.status = CandidateStatus.POSTING.value
+            s.flush()
+            s.expunge(c)
+            return c
+
+        # Pass 1: prefer the opposite category (nice alternation), best quality.
         if preferred is not None:
             for c in rows:
                 if eligible(c) and categories.category_for(c.subject) == preferred:
-                    s.expunge(c)
-                    return c
-            # Strict alternation: if the required category has nothing ready,
-            # skip this slot rather than posting two of the same type in a row.
-            if strict:
-                return None
+                    return claim(c)
 
-        # Pass 2: no preference (first post) or non-strict fallback -> best overall.
+        # Pass 2: preferred category has nothing ready -> post the best available
+        # of ANY category. We never stay silent just to keep a perfect pattern;
+        # posting a great meme now beats posting nothing for hours.
         for c in rows:
             if eligible(c):
-                s.expunge(c)
-                return c
+                return claim(c)
     return None
 
 
@@ -236,59 +251,69 @@ def _pick_candidate() -> Candidate | None:
 
 
 def post_one() -> bool:
-    """Publish a single best candidate if all gates pass. Returns True if posted."""
-    ok, reason = _should_post_now()
-    if not ok:
-        return False
+    """Publish a single best candidate if all gates pass. Returns True if posted.
 
-    cand = _pick_candidate()
-    if cand is None:
+    Fully serialized via ``_post_lock`` so concurrent callers (boot cycle, the
+    scheduled tick, the manual button) can never post two memes at once.
+    """
+    if not _post_lock.acquire(blocking=False):
+        # Another post is already in progress -- never run two at once.
         return False
-
-    # Final re-checks immediately before posting (defense in depth).
-    dup = dedup.find_duplicate(cand.phash, exclude_id=cand.id)
-    if dup:
-        _mark(cand.id, CandidateStatus.DUPLICATE.value, dup)
-        return False
-
-    ctx = SafetyContext(
-        title=cand.title, ocr_text=cand.ocr_text, ocr_available=bool(cand.ocr_text),
-        author=cand.author, subject=cand.subject, source=cand.source,
-        image_url=cand.image_url, local_path=cand.local_path,
-        width=cand.width, height=cand.height,
-    )
-    decision = evaluate(ctx)
-    if not decision.passed:
-        _mark(cand.id, CandidateStatus.SAFETY_REJECTED.value,
-              "; ".join(decision.reasons)[:500])
-        return False
-
-    caption = _build_caption(cand)
-    _mark(cand.id, CandidateStatus.POSTING.value, "")
     try:
-        result = get_client().post_image(cand.local_path, caption=caption)
-    except PublishError as exc:
-        _mark(cand.id, CandidateStatus.QUEUED.value, f"publish failed: {exc}")
-        _record_error("post_one", exc)
-        return False
+        ok, reason = _should_post_now()
+        if not ok:
+            return False
 
-    with session_scope() as s:
-        c = s.get(Candidate, cand.id)
-        c.status = CandidateStatus.POSTED.value
-        c.posted_at = _now()
-        c.x_post_id = result.post_id
-        c.caption = caption
-    dedup.remember_posted(cand.phash, cand.id)
-    # Free disk: the image is uploaded, and dedup only needs the pHash (in DB),
-    # so the local file is no longer needed.
-    _delete_image(cand.local_path)
-    _bump("total")
-    _bump("source", cand.source)
-    _bump("subject", cand.subject)
-    _record_success()
-    log("posted", f"id={cand.id} post_id={result.post_id} dry_run={result.dry_run}",
-        candidate_id=cand.id)
-    return True
+        cand = _pick_candidate()  # atomically claims the row as POSTING
+        if cand is None:
+            return False
+
+        # Final re-checks immediately before posting (defense in depth).
+        dup = dedup.find_duplicate(cand.phash, exclude_id=cand.id)
+        if dup:
+            _mark(cand.id, CandidateStatus.DUPLICATE.value, dup)
+            return False
+
+        ctx = SafetyContext(
+            title=cand.title, ocr_text=cand.ocr_text, ocr_available=bool(cand.ocr_text),
+            author=cand.author, subject=cand.subject, source=cand.source,
+            image_url=cand.image_url, local_path=cand.local_path,
+            width=cand.width, height=cand.height,
+        )
+        decision = evaluate(ctx)
+        if not decision.passed:
+            _mark(cand.id, CandidateStatus.SAFETY_REJECTED.value,
+                  "; ".join(decision.reasons)[:500])
+            return False
+
+        caption = _build_caption(cand)
+        try:
+            result = get_client().post_image(cand.local_path, caption=caption)
+        except PublishError as exc:
+            _mark(cand.id, CandidateStatus.QUEUED.value, f"publish failed: {exc}")
+            _record_error("post_one", exc)
+            return False
+
+        with session_scope() as s:
+            c = s.get(Candidate, cand.id)
+            c.status = CandidateStatus.POSTED.value
+            c.posted_at = _now()
+            c.x_post_id = result.post_id
+            c.caption = caption
+        dedup.remember_posted(cand.phash, cand.id)
+        # Free disk: the image is uploaded, and dedup only needs the pHash (in
+        # DB), so the local file is no longer needed.
+        _delete_image(cand.local_path)
+        _bump("total")
+        _bump("source", cand.source)
+        _bump("subject", cand.subject)
+        _record_success()
+        log("posted",
+            f"id={cand.id} post_id={result.post_id} dry_run={result.dry_run}",
+            candidate_id=cand.id)
+        return True
+    finally:
+        _post_lock.release()
 
 
 def _build_caption(cand: Candidate) -> str:
