@@ -12,11 +12,11 @@ async function api(path, opts = {}) {
 }
 
 // --- tabs ---
-document.querySelectorAll(".topbar nav a").forEach((a) => {
+document.querySelectorAll(".sidebar nav a").forEach((a) => {
   a.addEventListener("click", (e) => {
     e.preventDefault();
     const tab = a.dataset.tab;
-    document.querySelectorAll(".topbar nav a").forEach((x) => x.classList.remove("active"));
+    document.querySelectorAll(".sidebar nav a").forEach((x) => x.classList.remove("active"));
     a.classList.add("active");
     document.querySelectorAll(".tab").forEach((s) => s.classList.remove("active"));
     document.getElementById("tab-" + tab).classList.add("active");
@@ -24,28 +24,59 @@ document.querySelectorAll(".topbar nav a").forEach((a) => {
   });
 });
 
-function pill(label, ok, warn) {
-  const cls = warn ? "warn" : ok ? "ok" : "bad";
-  return `<span class="pill ${cls}">${label}</span>`;
+function buildBanner(s) {
+  // Decide the single most important thing to tell the user right now.
+  let cls = "good", icon = "✅", msg = "";
+  if (s.kill_switch) {
+    cls = "bad"; icon = "🛑";
+    msg = "<b>EMERGENCY STOP is ON.</b> Nothing will post until you clear it (press Emergency stop again).";
+  } else if (!s.has_x_credentials && !s.dry_run) {
+    cls = "bad"; icon = "🔌";
+    msg = "<b>X account not connected.</b> Add your API keys to start posting.";
+  } else if (s.paused) {
+    cls = "warn"; icon = "⏸";
+    msg = "<b>Paused.</b> The bot is idle. Press <b>Start posting</b> to run.";
+  } else if (s.dry_run) {
+    cls = "warn"; icon = "🧪";
+    msg = `<b>TEST MODE (dry-run).</b> Finding &amp; scoring memes but <b>not</b> actually posting. ` +
+          `Posted today: ${s.posted_today}/${s.posts_per_day} (simulated).`;
+  } else if (s.mode === "auto") {
+    cls = "good"; icon = "🤖";
+    msg = `<b>LIVE &amp; automatic.</b> Posting to @icr8meme by itself. ` +
+          `Today: ${s.posted_today}/${s.posts_per_day} posts.`;
+  } else {
+    cls = "warn"; icon = "🙋";
+    msg = `<b>LIVE &mdash; approval mode.</b> Waiting for you to approve posts in <b>Review</b>. ` +
+          `${s.awaiting} awaiting.`;
+  }
+  const b = document.getElementById("statusBanner");
+  b.className = "banner " + cls;
+  b.innerHTML = `<span style="font-size:1.3rem">${icon}</span><span>${msg}</span>`;
 }
 
 async function loadStats() {
   const s = await api("/api/stats");
   if (!s) return;
-  document.getElementById("statusPills").innerHTML =
-    pill(s.paused ? "PAUSED" : "RUNNING", !s.paused, false) +
-    pill("mode: " + s.mode, s.mode === "auto", s.mode !== "auto") +
-    pill(s.dry_run ? "DRY-RUN" : "LIVE", true, s.dry_run) +
-    pill(s.kill_switch ? "KILL SWITCH ON" : "kill switch off", !s.kill_switch, false) +
-    pill(s.has_x_credentials ? "X connected" : "X not connected", s.has_x_credentials, !s.has_x_credentials);
+  buildBanner(s);
+
+  const badge = document.getElementById("badgeReview");
+  if (badge) badge.textContent = s.awaiting ? s.awaiting : "";
+
+  // Toggle Start/Pause button visibility for clarity.
+  const resume = document.getElementById("btnResume");
+  const pause = document.getElementById("btnPause");
+  if (resume && pause) {
+    resume.style.display = s.paused ? "" : "none";
+    pause.style.display = s.paused ? "none" : "";
+  }
 
   const cards = [
     ["Posted today", `${s.posted_today} / ${s.posts_per_day}`],
     ["Awaiting review", s.awaiting],
-    ["Queued", s.queued],
+    ["Lined up", s.queued],
     ["Total posted", s.posted],
-    ["Safety-rejected", s.safety_rejected],
-    ["Taste exemplars", s.taste_exemplars],
+    ["Blocked (safety)", s.safety_rejected],
+    ["Taste examples", s.taste_exemplars],
   ];
   document.getElementById("statCards").innerHTML = cards
     .map(([l, n]) => `<div class="card"><div class="num">${n}</div><div class="label">${l}</div></div>`)
