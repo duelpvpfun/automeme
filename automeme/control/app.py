@@ -73,8 +73,21 @@ def create_app(start_scheduler: bool = True) -> FastAPI:
         # Register discovery sources.
         from .. import discovery  # noqa: F401
         from ..discovery import memeapi, reddit, reddit_api, x_source  # noqa: F401
+
+        # Env-driven bootstrap so the bot can go live from environment variables
+        # alone (e.g. on Railway, where the DB starts empty at defaults).
+        cfg = get_config()
+        if cfg.start_mode in (settings_store.MODE_AUTO, settings_store.MODE_APPROVAL):
+            settings_store.set_value("mode", cfg.start_mode)
+        if cfg.start_unpaused:
+            settings_store.set_value("paused", False)
+
         if start_scheduler:
             scheduler.start()
+            # Kick off one discovery cycle right away so the queue fills fast
+            # instead of waiting a full interval after boot.
+            import threading
+            threading.Thread(target=scheduler.run_discovery, daemon=True).start()
 
     @app.on_event("shutdown")
     def _shutdown() -> None:

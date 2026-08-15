@@ -50,6 +50,12 @@ class Config(BaseSettings):
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
 
+    # Startup bootstrap (useful on hosts like Railway where the DB starts empty).
+    # If set, these override the stored mode/paused ONCE at boot so the bot can
+    # go live purely from environment variables. Leave unset to use the panel.
+    start_mode: str = ""          # "auto" | "approval" | "" (leave as-is)
+    start_unpaused: bool = False  # true => unpause on boot
+
     @property
     def has_reddit_credentials(self) -> bool:
         return bool(self.reddit_client_id and self.reddit_client_secret)
