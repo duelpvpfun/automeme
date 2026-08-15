@@ -130,7 +130,11 @@ def ingest(limit_per_source: int = 60) -> dict:
             if not _subject_allowed(item.subject):
                 summary["blocked"] += 1
                 continue
-            if item.source_score < min_source_score:
+            # The upvote floor only applies to sources that expose REAL upvote
+            # counts (e.g. meme-api). RSS has no score, so it's exempt and is
+            # instead ranked purely by freshness / rising position.
+            has_real_score = not item.extra.get("no_real_score", False)
+            if has_real_score and item.source_score < min_source_score:
                 summary["low_source"] += 1
                 continue
             # Freshness gate: skip anything older than the cutoff so we only post

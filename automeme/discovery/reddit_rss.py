@@ -114,7 +114,10 @@ class RedditRssSource:
                     subject=sub.lower(),
                     source_score=pseudo_score,
                     velocity=velocity,
-                    extra={"age_hours": age_h, "listing": listing, "rss": True},
+                    # no_real_score: RSS has no upvote count, so exempt it from
+                    # the min_source_score floor (it's ranked by freshness).
+                    extra={"age_hours": age_h, "listing": listing,
+                           "rss": True, "no_real_score": True},
                 )
             )
         return items
