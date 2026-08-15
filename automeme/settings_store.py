@@ -24,23 +24,23 @@ DEFAULTS: dict[str, Any] = {
     "paused": True,                    # start paused; user unpauses in panel
     "kill_switch": False,              # hard stop; nothing posts, ever, while true
 
-    # Posting cadence
-    "posts_per_day": 8,                # target posts/day
-    "max_posts_per_day": 12,           # hard ceiling (never exceeded)
-    "min_minutes_between_posts": 45,   # spacing floor
-    "active_hours_start": 8,           # local hour posting may begin
-    "active_hours_end": 23,            # local hour posting must stop
-    "schedule_jitter_minutes": 25,     # +/- randomization for natural timing
+    # Posting cadence -- 16 posts/day, one every 90 min, around the clock.
+    "posts_per_day": 16,               # target posts/day
+    "max_posts_per_day": 20,           # hard ceiling (never exceeded)
+    "min_minutes_between_posts": 90,   # 1.5h spacing
+    "active_hours_start": 0,           # 24/7
+    "active_hours_end": 24,            # 24/7
+    "schedule_jitter_minutes": 20,     # +/- randomization for natural timing
 
     # Content policy
     "allowed_subjects": [],            # empty = allow all discovered subjects
-    "min_quality_score": 55.0,         # 0-100
-    "min_source_score": 500,           # minimum upvotes/score at source
+    "min_quality_score": 45.0,         # 0-100
+    "min_source_score": 200,           # minimum upvotes/score at source (catch early)
     # Freshness: reject anything older than this (hours). The whole point is to
     # catch NEW memes early -- before they spread to X -- not repost old virals.
     # Requires Reddit API creds for accurate age; meme-api age is estimated.
     "max_content_age_hours": 24,
-    "caption_mode": "none",            # none|title  (s8n style = none)
+    "caption_mode": "ai",              # none|ai|title  (ai = animal names + s8n lines)
     "max_caption_length": 0,           # 0 = never add a caption
 
     # Meme vs cute-animal mix
@@ -57,8 +57,8 @@ DEFAULTS: dict[str, Any] = {
     "dedup_hamming_threshold": 6,      # <= => considered near-duplicate
 
     # Anti-spam / format diversity
-    "max_same_source_per_day": 4,
-    "max_same_subject_per_day": 4,
+    "max_same_source_per_day": 20,
+    "max_same_subject_per_day": 8,
     "recent_format_window": 5,         # avoid repeating dominant format within N posts
 
     # Freshness of the QUEUE itself: a queued meme that never got posted within

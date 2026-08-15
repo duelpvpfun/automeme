@@ -31,11 +31,11 @@ def default_weights() -> dict[str, float]:
     if isinstance(stored, dict) and stored:
         return stored
     return {
-        "velocity": 0.30,
-        "score": 0.20,
+        "velocity": 0.20,
+        "score": 0.40,      # upvotes are the strongest "is this actually viral" signal
         "freshness": 0.10,
-        "taste": 0.25,
-        "engagement": 0.15,
+        "taste": 0.20,
+        "engagement": 0.10,
     }
 
 

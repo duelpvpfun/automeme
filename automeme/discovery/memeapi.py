@@ -76,11 +76,14 @@ class MemeApiSource:
                     title=m.get("title", "") or "",
                     author=m.get("author", "") or "",
                     subject=str(m.get("subreddit", sub)).lower(),
-                    source_score=ups,
+                    source_score=ups,     # REAL upvotes -> primary quality signal
                     source_comments=0,
-                    # No age from this API: approximate velocity from popularity.
+                    # meme-api pulls from 'hot', which is recent+popular. No exact
+                    # age, so treat velocity as the upvote count (rank by upvotes).
                     velocity=float(ups),
-                    extra={"age_hours": 6.0},
+                    # age unknown -> leave 0 so the freshness gate doesn't wrongly
+                    # drop it; 'hot' is already recent-ish.
+                    extra={"age_hours": 0.0},
                 )
             )
         return out
@@ -88,7 +91,9 @@ class MemeApiSource:
     def fetch(self, limit: int = 50) -> list[DiscoveredItem]:
         cfg = get_config()
         headers = {"User-Agent": cfg.user_agent}
-        per = max(1, min(limit // max(len(self.subreddits), 1), 50))
+        # Pull a decent batch per subreddit (max 50) so we see the high-upvote
+        # posts, not just a couple. The scorer then favors the biggest ones.
+        per = 50
         out: dict[str, DiscoveredItem] = {}
         with httpx.Client(headers=headers, timeout=20.0, follow_redirects=True) as client:
             for sub in self.subreddits:
