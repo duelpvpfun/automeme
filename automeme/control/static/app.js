@@ -149,6 +149,8 @@ const SETTING_FIELDS = [
   ["dedup_hamming_threshold", "Dedup sensitivity (hamming)", "number"],
   ["max_same_source_per_day", "Max same source / day", "number"],
   ["max_same_subject_per_day", "Max same subject / day", "number"],
+  ["queue_ttl_hours", "Drop queued memes older than (hours)", "number"],
+  ["max_queue_size", "Max queue backlog size", "number"],
   ["max_consecutive_errors", "Auto-shutdown after N errors", "number"],
   ["discovery_interval_minutes", "Discovery interval (min)", "number"],
   ["metrics_refresh_hours", "Metrics poll every (hours)", "number"],

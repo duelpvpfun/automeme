@@ -183,17 +183,27 @@ def _pick_candidate() -> Candidate | None:
         elif last == categories.ANIMAL:
             preferred = categories.MEME
 
+    ttl_h = float(settings_store.get("queue_ttl_hours", 12))
+    ttl_cutoff = _now() - timedelta(hours=ttl_h)
+
     with session_scope() as s:
         rows = list(
             s.execute(
                 select(Candidate)
                 .where(Candidate.status == CandidateStatus.QUEUED.value)
-                .order_by(Candidate.quality_score.desc())
-                .limit(80)
+                # Freshest-discovered first (not just highest quality), so new
+                # viral memes jump the queue instead of waiting behind a backlog.
+                .order_by(Candidate.created_at.desc())
+                .limit(120)
             ).scalars()
         )
 
         def eligible(c: Candidate) -> bool:
+            created = c.created_at
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created and created < ttl_cutoff:
+                return False  # stale queue entry -> skip (will be trimmed)
             return (
                 _get_count("source", c.source) < max_src
                 and _get_count("subject", c.subject) < max_subj
@@ -296,9 +306,48 @@ def _mark(candidate_id: int, status: str, reason: str) -> None:
             c.status_reason = reason
 
 
+def trim_queue() -> None:
+    """Drop stale queued items and cap the backlog so posts stay fresh.
+
+    * Anything queued longer than ``queue_ttl_hours`` is disabled (too old now).
+    * If the queue still exceeds ``max_queue_size``, the lowest-quality overflow
+      is disabled, keeping only the best, freshest candidates.
+    """
+    ttl_h = float(settings_store.get("queue_ttl_hours", 12))
+    max_size = int(settings_store.get("max_queue_size", 40))
+    cutoff = _now() - timedelta(hours=ttl_h)
+    expired = trimmed = 0
+    with session_scope() as s:
+        rows = list(
+            s.execute(
+                select(Candidate)
+                .where(Candidate.status == CandidateStatus.QUEUED.value)
+                .order_by(Candidate.quality_score.desc())
+            ).scalars()
+        )
+        kept = []
+        for c in rows:
+            created = c.created_at
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created and created < cutoff:
+                c.status = CandidateStatus.DISABLED.value
+                c.status_reason = f"expired from queue (>{ttl_h}h old, stale)"
+                expired += 1
+            else:
+                kept.append(c)
+        for c in kept[max_size:]:
+            c.status = CandidateStatus.DISABLED.value
+            c.status_reason = "queue trimmed (backlog cap; lower quality)"
+            trimmed += 1
+    if expired or trimmed:
+        log("queue_trimmed", f"expired={expired} trimmed={trimmed}")
+
+
 def run_discovery() -> None:
     try:
         pipeline.ingest()
+        trim_queue()
         _record_success()
     except Exception as exc:  # noqa: BLE001
         _record_error("run_discovery", exc)

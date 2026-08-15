@@ -61,6 +61,12 @@ DEFAULTS: dict[str, Any] = {
     "max_same_subject_per_day": 4,
     "recent_format_window": 5,         # avoid repeating dominant format within N posts
 
+    # Freshness of the QUEUE itself: a queued meme that never got posted within
+    # this many hours is dropped (it's no longer fresh). Prevents a large backlog
+    # from posting stale content days later. Keep small to stay timely.
+    "queue_ttl_hours": 12,
+    "max_queue_size": 40,              # cap the backlog; trim lowest-quality overflow
+
     # Resilience
     "max_consecutive_errors": 5,       # auto-shutdown (kill_switch) after this many
     "discovery_interval_minutes": 30,
