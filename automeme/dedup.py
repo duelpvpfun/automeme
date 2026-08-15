@@ -55,3 +55,35 @@ def remember_posted(phash: str, candidate_id: int | None = None) -> None:
         return
     with session_scope() as s:
         s.add(PostedHash(phash=phash, candidate_id=candidate_id))
+
+
+def reserve_posted(phash: str, candidate_id: int | None = None) -> bool:
+    """Atomically claim a pHash before posting. Returns False if it was already
+    posted/reserved (the UNIQUE constraint on phash guarantees this even across
+    processes), making a duplicate post impossible.
+    """
+    if not phash:
+        return False
+    from sqlalchemy.exc import IntegrityError
+    try:
+        with session_scope() as s:
+            # Belt-and-suspenders: also block near-duplicates already recorded.
+            threshold = int(settings_store.get("dedup_hamming_threshold", 6))
+            for row in s.execute(select(PostedHash)).scalars():
+                if hamming(phash, row.phash) <= threshold:
+                    return False
+            s.add(PostedHash(phash=phash, candidate_id=candidate_id))
+    except IntegrityError:
+        return False  # exact duplicate phash -> DB rejected it
+    return True
+
+
+def release_posted(phash: str) -> None:
+    """Undo a reservation (used when the tweet failed to send)."""
+    if not phash:
+        return
+    with session_scope() as s:
+        for row in s.execute(
+            select(PostedHash).where(PostedHash.phash == phash)
+        ).scalars():
+            s.delete(row)

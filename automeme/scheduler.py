@@ -238,11 +238,21 @@ def _pick_candidate() -> Candidate | None:
         if not any(eligible(c) for c in rows):
             eligible = fresh  # noqa: F811 -- intentional relaxation
 
-        def claim(c: Candidate) -> Candidate:
-            # Atomically take the row within THIS transaction so a concurrent
-            # picker can't grab the same candidate (prevents double-posting).
-            c.status = CandidateStatus.POSTING.value
+        def claim(c: Candidate) -> Candidate | None:
+            # Atomic, cross-process claim: only flip the row if it is STILL
+            # queued. rowcount==1 means we won; 0 means another worker already
+            # took it -> skip. This is the true guard against double-posting.
+            from sqlalchemy import update
+            res = s.execute(
+                update(Candidate)
+                .where(Candidate.id == c.id,
+                       Candidate.status == CandidateStatus.QUEUED.value)
+                .values(status=CandidateStatus.POSTING.value)
+            )
+            if res.rowcount != 1:
+                return None
             s.flush()
+            s.refresh(c)
             s.expunge(c)
             return c
 
@@ -250,14 +260,17 @@ def _pick_candidate() -> Candidate | None:
         if preferred is not None:
             for c in rows:
                 if eligible(c) and categories.category_for(c.subject) == preferred:
-                    return claim(c)
+                    won = claim(c)
+                    if won is not None:
+                        return won
 
         # Pass 2: preferred category has nothing ready -> post the best available
-        # of ANY category. We never stay silent just to keep a perfect pattern;
-        # posting a great meme now beats posting nothing for hours.
+        # of ANY category. We never stay silent just to keep a perfect pattern.
         for c in rows:
             if eligible(c):
-                return claim(c)
+                won = claim(c)
+                if won is not None:
+                    return won
     return None
 
 
@@ -302,10 +315,21 @@ def post_one() -> bool:
                   "; ".join(decision.reasons)[:500])
             return False
 
+        # RESERVE the pHash in permanent posted-memory BEFORE sending the tweet.
+        # The UNIQUE constraint means if this image was ever posted (or is being
+        # posted concurrently, even in another process/replica), the reservation
+        # fails and we abort -- making a duplicate post physically impossible.
+        if not dedup.reserve_posted(cand.phash, cand.id):
+            _mark(cand.id, CandidateStatus.DUPLICATE.value,
+                  "phash already reserved/posted")
+            return False
+
         caption = _build_caption(cand)
         try:
             result = get_client().post_image(cand.local_path, caption=caption)
         except PublishError as exc:
+            # Posting failed -> release the reservation so it can retry later.
+            dedup.release_posted(cand.phash)
             _mark(cand.id, CandidateStatus.QUEUED.value, f"publish failed: {exc}")
             _record_error("post_one", exc)
             return False
@@ -316,7 +340,6 @@ def post_one() -> bool:
             c.posted_at = _now()
             c.x_post_id = result.post_id
             c.caption = caption
-        dedup.remember_posted(cand.phash, cand.id)
         # Free disk: the image is uploaded, and dedup only needs the pHash (in
         # DB), so the local file is no longer needed.
         _delete_image(cand.local_path)

@@ -142,12 +142,16 @@ class Blocklist(Base):
 
 
 class PostedHash(Base):
-    """Perceptual hashes of everything ever posted (permanent dedup memory)."""
+    """Perceptual hashes of everything ever posted (permanent dedup memory).
+
+    ``phash`` is UNIQUE: the database itself physically refuses to record the
+    same posted image twice, so a duplicate post can never be committed.
+    """
 
     __tablename__ = "posted_hashes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    phash: Mapped[str] = mapped_column(String(64), index=True)
+    phash: Mapped[str] = mapped_column(String(64), index=True, unique=True)
     candidate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

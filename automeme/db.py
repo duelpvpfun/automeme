@@ -43,6 +43,27 @@ def get_engine() -> Engine:
 
 def init_db() -> None:
     Base.metadata.create_all(get_engine())
+    _ensure_posted_hash_unique()
+
+
+def _ensure_posted_hash_unique() -> None:
+    """Add a UNIQUE index on posted_hashes.phash for existing databases that
+    predate the constraint (create_all won't alter an existing table). Removes
+    any duplicate rows first so the index can be created."""
+    from sqlalchemy import text
+    eng = get_engine()
+    with eng.begin() as conn:
+        try:
+            conn.execute(text(
+                "DELETE FROM posted_hashes WHERE id NOT IN "
+                "(SELECT MIN(id) FROM posted_hashes GROUP BY phash)"
+            ))
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_posted_hashes_phash "
+                "ON posted_hashes(phash)"
+            ))
+        except Exception:  # noqa: BLE001 - non-fatal; table may not exist yet
+            pass
 
 
 def _factory() -> sessionmaker[Session]:
