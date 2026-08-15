@@ -220,6 +220,7 @@ def ingest(limit_per_source: int = 60) -> dict:
                 text_density=info.text_density,
                 source=item.source,
                 subject=item.subject,
+                has_real_score=has_real_score,
             )
             if quality < min_quality:
                 summary["low_quality"] += 1

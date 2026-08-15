@@ -50,11 +50,22 @@ def compute_quality(
     text_density: float,
     source: str,
     subject: str,
+    has_real_score: bool = True,
 ) -> tuple[float, dict]:
     w = default_weights()
 
-    velocity_n = _norm_log(velocity, cap=5000.0)
-    score_n = _norm_log(source_score, cap=100000.0)
+    if has_real_score:
+        # Real upvote counts (e.g. meme-api): compare on the full popularity scale.
+        score_n = _norm_log(source_score, cap=100000.0)
+        velocity_n = _norm_log(velocity, cap=5000.0)
+    else:
+        # Sources with NO real upvotes (RSS pseudo-score maxes ~25) can never
+        # compete against upvote-scale items on the same axis. Normalize them
+        # against their own small scale instead, so a fresh, well-placed post
+        # from RSS is judged fairly rather than being permanently capped low.
+        score_n = _norm_log(source_score, cap=25.0)
+        velocity_n = _norm_log(velocity, cap=25.0)
+
     freshness_n = max(0.0, 1.0 - min(age_hours / 48.0, 1.0))
     taste_n = taste.taste_score(phash, width, height, text_density) / 100.0
     engagement_n = source_subject_prior(source, subject)  # 0..1

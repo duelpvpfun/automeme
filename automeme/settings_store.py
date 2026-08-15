@@ -50,6 +50,12 @@ DEFAULTS: dict[str, Any] = {
     "strict_alternate": True,          # never post 2 of the same type in a row
     "animal_name_caption": True,       # caption animal posts with the pet's name
 
+    # Selection: don't ALWAYS post the single top-scored item. Any candidate
+    # within this many points of the best (e.g. 89 vs 80-89 band) is treated as
+    # "also great" and picked at random, weighted toward the higher scores.
+    # Avoids posting the exact same #1 meme after every redeploy/restart.
+    "pick_score_band": 8.0,
+
     # Safety thresholds (higher = stricter)
     # medium (default): rule-based text screening + image sanity; usable without
     #   optional ML models. high: additionally REQUIRES the nudity detector +

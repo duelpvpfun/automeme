@@ -256,21 +256,51 @@ def _pick_candidate() -> Candidate | None:
             s.expunge(c)
             return c
 
-        # Pass 1: prefer the opposite category (nice alternation), best quality.
-        if preferred is not None:
-            for c in rows:
-                if eligible(c) and categories.category_for(c.subject) == preferred:
-                    won = claim(c)
+        def pick_from(pool: list[Candidate]) -> Candidate | None:
+            """Weighted-random among candidates within `pick_score_band` points
+            of the best -- so it's not always the exact same #1 meme every time
+            (e.g. 89/86/83/82/80 all count as "great" and any can be chosen),
+            while still strongly favoring higher scores."""
+            if not pool:
+                return None
+            band = float(settings_store.get("pick_score_band", 8.0))
+            best = pool[0].quality_score
+            contenders = [c for c in pool if best - c.quality_score <= band] or pool[:1]
+            weights = [max(c.quality_score, 0.1) for c in contenders]
+            order = list(range(len(contenders)))
+            random.shuffle(order)  # randomize tie order before weighting
+            total_w = sum(weights)
+            r = random.uniform(0, total_w)
+            upto = 0.0
+            for i in order:
+                upto += weights[i]
+                if upto >= r:
+                    won = claim(contenders[i])
                     if won is not None:
                         return won
-
-        # Pass 2: preferred category has nothing ready -> post the best available
-        # of ANY category. We never stay silent just to keep a perfect pattern.
-        for c in rows:
-            if eligible(c):
+            # Fallback (floating point edge case): try them all in order.
+            for c in contenders:
                 won = claim(c)
                 if won is not None:
                     return won
+            return None
+
+        # Pass 1: prefer the opposite category (nice alternation); pick among
+        # the near-top of that category, weighted-random -- not always #1.
+        if preferred is not None:
+            pool = [c for c in rows if eligible(c)
+                    and categories.category_for(c.subject) == preferred]
+            won = pick_from(pool)
+            if won is not None:
+                return won
+
+        # Pass 2: preferred category has nothing ready -> pick among the
+        # near-top of ANY category. We never stay silent just to keep a
+        # perfect alternation pattern.
+        pool = [c for c in rows if eligible(c)]
+        won = pick_from(pool)
+        if won is not None:
+            return won
     return None
 
 
