@@ -1,0 +1,1 @@
+"""Private control panel (FastAPI)."""

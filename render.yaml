@@ -1,0 +1,30 @@
+# Render blueprint. Push this repo, then in Render: New > Blueprint > pick repo.
+# A persistent disk is REQUIRED so the SQLite DB + learned data survive restarts.
+services:
+  - type: web
+    name: automeme
+    runtime: docker
+    plan: starter            # needs a paid plan for a persistent disk + always-on
+    dockerfilePath: ./Dockerfile
+    autoDeploy: false
+    disk:
+      name: automeme-data
+      mountPath: /data       # matches AUTOMEME_DATA_DIR in the Dockerfile
+      sizeGB: 1
+    envVars:
+      - key: AUTOMEME_PANEL_PASSWORD
+        sync: false          # set in the Render dashboard (secret)
+      - key: AUTOMEME_SECRET_KEY
+        generateValue: true  # Render generates a strong random value
+      - key: AUTOMEME_DRY_RUN
+        value: "false"
+      - key: AUTOMEME_X_API_KEY
+        sync: false
+      - key: AUTOMEME_X_API_SECRET
+        sync: false
+      - key: AUTOMEME_X_ACCESS_TOKEN
+        sync: false
+      - key: AUTOMEME_X_ACCESS_SECRET
+        sync: false
+      - key: AUTOMEME_X_BEARER_TOKEN
+        sync: false

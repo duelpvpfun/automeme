@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>automeme · control</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">automeme</div>
+    <nav>
+      <a href="#" data-tab="dashboard" class="active">Dashboard</a>
+      <a href="#" data-tab="preview">Preview</a>
+      <a href="#" data-tab="review">Review</a>
+      <a href="#" data-tab="posted">Posted</a>
+      <a href="#" data-tab="settings">Settings</a>
+      <a href="#" data-tab="blocklist">Blocklist</a>
+      <a href="#" data-tab="taste">Taste</a>
+      <a href="#" data-tab="activity">Activity</a>
+    </nav>
+    <a class="logout" href="/logout">Logout</a>
+  </header>
+
+  <main>
+    <!-- Master controls -->
+    <section class="controls">
+      <div id="statusPills" class="pills"></div>
+      <div class="control-buttons">
+        <button id="btnPause" class="btn">Pause</button>
+        <button id="btnResume" class="btn primary">Resume</button>
+        <button id="btnMode" class="btn">Toggle mode</button>
+        <button id="btnPurge" class="btn warn">Purge queue</button>
+        <button id="btnKill" class="btn danger">EMERGENCY STOP</button>
+      </div>
+    </section>
+
+    <section id="tab-dashboard" class="tab active">
+      <div id="statCards" class="cards"></div>
+    </section>
+
+    <section id="tab-preview" class="tab">
+      <h2>Dry-run preview &mdash; what it <em>would</em> post</h2>
+      <p class="muted">A simulation of the real schedule (alternating memes &amp; animals,
+      spacing, caps, captions). Nothing is posted. Use this to confirm the output looks good
+      before going live.</p>
+      <div class="row">
+        <label class="muted">Window:
+          <select id="simDays">
+            <option value="1">1 day</option>
+            <option value="3" selected>3 days</option>
+            <option value="7">7 days</option>
+          </select>
+        </label>
+        <button id="runSim" class="btn primary">Run simulation</button>
+        <span id="simSummary" class="muted"></span>
+      </div>
+      <div id="simFeed" class="feed"></div>
+    </section>
+
+    <section id="tab-review" class="tab">
+      <h2>Review queue</h2>
+      <p class="muted">Awaiting approval &amp; queued candidates. Approve to allow posting; disable to remove.</p>
+      <div id="reviewGrid" class="grid"></div>
+    </section>
+
+    <section id="tab-posted" class="tab">
+      <h2>Published posts &amp; performance</h2>
+      <div id="postedGrid" class="grid"></div>
+    </section>
+
+    <section id="tab-settings" class="tab">
+      <h2>Settings</h2>
+      <form id="settingsForm" class="settings-form"></form>
+      <button id="saveSettings" class="btn primary">Save settings</button>
+      <span id="settingsSaved" class="muted"></span>
+    </section>
+
+    <section id="tab-blocklist" class="tab">
+      <h2>Blocklist</h2>
+      <div class="row">
+        <select id="blockKind">
+          <option value="source">source</option>
+          <option value="topic">topic / subreddit</option>
+          <option value="author">author</option>
+          <option value="phrase">phrase</option>
+        </select>
+        <input id="blockValue" placeholder="value to block" />
+        <button id="addBlock" class="btn">Add</button>
+      </div>
+      <table id="blockTable" class="table"></table>
+    </section>
+
+    <section id="tab-taste" class="tab">
+      <h2>Taste profile</h2>
+      <p class="muted">Teach the curator your style. Paste image URLs of posts you love
+      (e.g. from @s8n) so it learns to find similar memes.</p>
+      <div class="row">
+        <input id="tasteUrl" placeholder="https://…image.jpg" style="flex:1" />
+        <input id="tasteLabel" placeholder="label (e.g. s8n)" value="s8n" />
+        <button id="addTaste" class="btn">Add exemplar</button>
+      </div>
+      <p id="tasteMsg" class="muted"></p>
+    </section>
+
+    <section id="tab-activity" class="tab">
+      <h2>Activity log</h2>
+      <table id="activityTable" class="table"></table>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

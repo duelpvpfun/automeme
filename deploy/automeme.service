@@ -1,0 +1,36 @@
+# systemd unit for running automeme 24/7 on a plain VPS.
+#
+# Install:
+#   sudo cp deploy/automeme.service /etc/systemd/system/automeme.service
+#   sudo nano /etc/systemd/system/automeme.service   # fix User + paths
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now automeme
+#   sudo systemctl status automeme
+#   journalctl -u automeme -f                          # live logs
+
+[Unit]
+Description=automeme - autonomous X meme curator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=automeme
+WorkingDirectory=/opt/automeme
+EnvironmentFile=/opt/automeme/.env
+ExecStart=/opt/automeme/.venv/bin/python -m automeme
+Restart=always
+RestartSec=5
+# Auto-restart, but stop trying if it crash-loops (matches the app's own
+# error-shutdown philosophy).
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

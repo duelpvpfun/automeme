@@ -1,0 +1,34 @@
+# Core web + scheduler
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+jinja2==3.1.4
+python-multipart==0.0.20
+itsdangerous==2.2.0
+apscheduler==3.11.0
+
+# Data / DB
+SQLAlchemy==2.0.36
+
+# HTTP + X API
+httpx==0.28.1
+tweepy==4.14.0
+
+# Config
+python-dotenv==1.0.1
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# Image processing + perceptual dedup
+Pillow==11.1.0
+ImageHash==4.3.1
+
+# --- Optional but STRONGLY recommended for real operation ---
+# OCR (extract text baked into images so it can be safety-screened).
+#   Requires system package: tesseract-ocr
+# pytesseract==0.3.13
+#
+# NSFW / nudity detection (fail-closed until installed):
+# nudenet==3.4.2
+#
+# Testing
+pytest==8.3.4
