@@ -78,21 +78,27 @@ def download(url: str) -> Path:
     cfg = get_config()
     dest = cfg.images_path / f"{_safe_name(url)}"
     headers = {"User-Agent": cfg.user_agent}
-    with httpx.Client(headers=headers, timeout=30.0, follow_redirects=True) as client:
-        with client.stream("GET", url) as resp:
-            resp.raise_for_status()
-            ctype = resp.headers.get("content-type", "")
-            if ctype and not ctype.startswith("image/"):
-                raise ImageError(f"not an image (content-type={ctype})")
-            total = 0
-            with open(dest, "wb") as fh:
-                for chunk in resp.iter_bytes(65536):
-                    total += len(chunk)
-                    if total > MAX_DOWNLOAD_BYTES:
-                        fh.close()
-                        dest.unlink(missing_ok=True)
-                        raise ImageError("image exceeds size cap")
-                    fh.write(chunk)
+    try:
+        with httpx.Client(headers=headers, timeout=30.0, follow_redirects=True) as client:
+            with client.stream("GET", url) as resp:
+                resp.raise_for_status()
+                ctype = resp.headers.get("content-type", "")
+                if ctype and not ctype.startswith("image/"):
+                    raise ImageError(f"not an image (content-type={ctype})")
+                total = 0
+                with open(dest, "wb") as fh:
+                    for chunk in resp.iter_bytes(65536):
+                        total += len(chunk)
+                        if total > MAX_DOWNLOAD_BYTES:
+                            fh.close()
+                            dest.unlink(missing_ok=True)
+                            raise ImageError("image exceeds size cap")
+                        fh.write(chunk)
+    except httpx.HTTPError as exc:
+        # A dead/removed image (404, timeout, etc.) must not crash the whole
+        # discovery cycle -- surface it as ImageError so the caller skips it.
+        dest.unlink(missing_ok=True)
+        raise ImageError(f"download failed: {exc}") from exc
     return dest
 
 
