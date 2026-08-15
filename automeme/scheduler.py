@@ -274,6 +274,9 @@ def post_one() -> bool:
         c.x_post_id = result.post_id
         c.caption = caption
     dedup.remember_posted(cand.phash, cand.id)
+    # Free disk: the image is uploaded, and dedup only needs the pHash (in DB),
+    # so the local file is no longer needed.
+    _delete_image(cand.local_path)
     _bump("total")
     _bump("source", cand.source)
     _bump("subject", cand.subject)
@@ -344,10 +347,61 @@ def trim_queue() -> None:
         log("queue_trimmed", f"expired={expired} trimmed={trimmed}")
 
 
+def _delete_image(path: str) -> None:
+    if not path:
+        return
+    try:
+        from pathlib import Path
+        Path(path).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def cleanup_images() -> None:
+    """Delete image files that are no longer needed and prune orphan files.
+
+    Keeps only images for candidates still QUEUED/AWAITING (they haven't posted
+    yet). Everything else -- posted, rejected, disabled, duplicate -- has its
+    file removed. Also deletes any file on disk with no matching candidate.
+    """
+    from pathlib import Path
+
+    keep_statuses = {
+        CandidateStatus.QUEUED.value,
+        CandidateStatus.AWAITING_APPROVAL.value,
+        CandidateStatus.POSTING.value,
+        CandidateStatus.SCORED.value,
+        CandidateStatus.DISCOVERED.value,
+    }
+    cfg = get_client().cfg
+    freed = 0
+    keep_paths: set[str] = set()
+    with session_scope() as s:
+        for c in s.execute(select(Candidate)).scalars():
+            if c.status in keep_statuses and c.local_path:
+                keep_paths.add(c.local_path)
+            elif c.local_path:
+                if Path(c.local_path).exists():
+                    _delete_image(c.local_path)
+                    freed += 1
+                c.local_path = ""
+    # Prune orphan files (e.g. left by crashes) not referenced by any keeper.
+    try:
+        for f in cfg.images_path.iterdir():
+            if f.is_file() and str(f) not in keep_paths:
+                f.unlink(missing_ok=True)
+                freed += 1
+    except OSError:
+        pass
+    if freed:
+        log("images_cleaned", f"removed {freed} image files")
+
+
 def run_discovery() -> None:
     try:
         pipeline.ingest()
         trim_queue()
+        cleanup_images()
         _record_success()
     except Exception as exc:  # noqa: BLE001
         _record_error("run_discovery", exc)
