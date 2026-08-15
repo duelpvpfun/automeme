@@ -61,13 +61,23 @@ class RedditRssSource:
     # limits datacenter IPs hard; hitting all 24 x2 listings per cycle gets us
     # throttled and forces the repetitive meme-api fallback).
     _cursor = 0
+    _listing_cursor = 0
     _BATCH = 8  # subreddits per cycle
 
+    # Rotate the listing each cycle so the pool keeps changing: today's top,
+    # this week's top, and what's hot right now -- a deep, refreshing well.
+    _LISTINGS = ("top?t=day", "hot", "top?t=week", "rising")
+
     def __init__(self, subreddits: tuple[str, ...] | None = None,
-                 listings: tuple[str, ...] = ("top",)):
-        # "top" (t=day) = the day's most-upvoted posts, already ranked by score.
+                 listings: tuple[str, ...] | None = None):
         self.subreddits = tuple(subreddits or self._RSS_SUBREDDITS)
-        self.listings = listings
+        self.listings = listings  # None => rotate through _LISTINGS
+
+    def _listing(self) -> str:
+        cls = type(self)
+        lst = self._LISTINGS[cls._listing_cursor % len(self._LISTINGS)]
+        cls._listing_cursor += 1
+        return lst
 
     def _batch(self) -> tuple[str, ...]:
         """Return the next rotating slice of subreddits for this cycle."""
@@ -92,9 +102,11 @@ class RedditRssSource:
 
     def _fetch_feed(self, client: httpx.Client, sub: str, listing: str,
                     max_age_h: float) -> list[DiscoveredItem]:
-        url = f"https://www.reddit.com/r/{sub}/{listing}/.rss?limit=25"
-        if listing == "top":
-            url += "&t=day"  # day's top-upvoted posts
+        # listing may carry a query, e.g. "top?t=day"; split path vs params.
+        path, _, extra = listing.partition("?")
+        url = f"https://www.reddit.com/r/{sub}/{path}/.rss?limit=25"
+        if extra:
+            url += "&" + extra
         content = self._get_feed_bytes(client, url)
         if not content:
             return []
@@ -161,13 +173,19 @@ class RedditRssSource:
         max_age_h = float(settings_store.get("max_content_age_hours", 24))
         cfg = get_config()
         headers = {"User-Agent": cfg.user_agent or "Mozilla/5.0 (automeme)"}
+        # One rotating listing per cycle (unless explicitly overridden), so the
+        # pool keeps changing across cycles instead of returning the same set.
+        listings = self.listings if self.listings else (self._listing(),)
+        # Weekly-top can be older than the daily freshness cap; give it headroom
+        # so it can add variety (still proven-viral content).
         out: dict[str, DiscoveredItem] = {}
         try:
             with httpx.Client(headers=headers, timeout=15.0, follow_redirects=True) as client:
                 for sub in self._batch():
-                    for listing in self.listings:
+                    for listing in listings:
+                        eff_age = max_age_h * (7 if "week" in listing else 1)
                         try:
-                            for item in self._fetch_feed(client, sub, listing, max_age_h):
+                            for item in self._fetch_feed(client, sub, listing, eff_age):
                                 prev = out.get(item.source_id)
                                 if prev is None or item.velocity > prev.velocity:
                                     out[item.source_id] = item
@@ -177,7 +195,8 @@ class RedditRssSource:
         except httpx.HTTPError as exc:
             log("reddit_rss_error", str(exc), level="warning")
             return []
-        log("reddit_rss_ok", f"fresh items={len(out)} (max_age={max_age_h}h)")
+        log("reddit_rss_ok",
+            f"fresh items={len(out)} listing={listings[0]}")
         return list(out.values())
 
 
