@@ -84,6 +84,20 @@ def create_app(start_scheduler: bool = True) -> FastAPI:
         if cfg.start_unpaused:
             settings_store.set_value("paused", False)
 
+        # In auto mode, release any candidates left in awaiting_approval (e.g.
+        # discovered before a mode switch) so they flow into the post queue.
+        if settings_store.get("mode") == settings_store.MODE_AUTO:
+            from ..models import Candidate, CandidateStatus
+            from sqlalchemy import select as _select
+            from ..db import session_scope as _scope
+            with _scope() as _s:
+                for _c in _s.execute(
+                    _select(Candidate).where(
+                        Candidate.status == CandidateStatus.AWAITING_APPROVAL.value
+                    )
+                ).scalars():
+                    _c.status = CandidateStatus.QUEUED.value
+
         if start_scheduler:
             scheduler.start()
             # Fully hands-off boot: discover immediately, then try to post the

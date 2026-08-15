@@ -19,9 +19,11 @@ MODE_AUTO = "auto"                # discover -> safety -> queue -> auto post
 MODE_APPROVAL = "approval"        # everything but a human must approve before posting
 
 DEFAULTS: dict[str, Any] = {
-    # Master switches
-    "mode": MODE_APPROVAL,             # start safe: require approval
-    "paused": True,                    # start paused; user unpauses in panel
+    # Master switches. Default to fully autonomous; the real safety gate is
+    # AUTOMEME_DRY_RUN (true by default) -- nothing posts for real until you set
+    # DRY_RUN=false AND provide X credentials.
+    "mode": MODE_AUTO,                 # auto = bot picks + posts by itself
+    "paused": False,                   # running by default
     "kill_switch": False,              # hard stop; nothing posts, ever, while true
 
     # Posting cadence -- 16 posts/day, one every 90 min, around the clock.
