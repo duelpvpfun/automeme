@@ -45,24 +45,28 @@ def _first_image(content_html: str) -> str:
 class RedditRssSource:
     name = "reddit_rss"
 
-    # Broader list than meme-api for real variety (day's top across many subs).
-    _RSS_SUBREDDITS = (
-        # memes / humor
-        "memes", "dankmemes", "me_irl", "wholesomememes", "funny", "MemeEconomy",
-        "AdviceAnimals", "facepalm", "clevercomebacks", "meirl", "comedyheaven",
-        "terriblefacebookmemes", "bonehurtingjuice", "okbuddyretard",
-        # cute animals
-        "aww", "rarepuppers", "cats", "AnimalsBeingDerps", "Eyebleach",
-        "dogpictures", "shibe", "shibainu", "IllegallySmolCats", "babyelephantgifs",
-        "AnimalsBeingBros", "goldenretrievers",
+    # CORE hubs are checked EVERY cycle: this is where a "generational" meme
+    # actually breaks, so we never miss it waiting for a rotation. Big, high-
+    # traffic meme + animal subs.
+    _CORE_SUBREDDITS = (
+        "memes", "dankmemes", "me_irl", "funny", "wholesomememes",  # memes
+        "aww", "rarepuppers", "Eyebleach",                          # animals
     )
 
-    # Round-robin cursor so each cycle hits only a few subreddits (Reddit rate-
-    # limits datacenter IPs hard; hitting all 24 x2 listings per cycle gets us
-    # throttled and forces the repetitive meme-api fallback).
+    # The long tail rotates a few per cycle for variety (niche subs where
+    # missing the very first minutes matters far less).
+    _ROTATING_SUBREDDITS = (
+        "MemeEconomy", "AdviceAnimals", "facepalm", "clevercomebacks", "meirl",
+        "comedyheaven", "terriblefacebookmemes", "bonehurtingjuice", "okbuddyretard",
+        "cats", "AnimalsBeingDerps", "dogpictures", "shibe", "shibainu",
+        "IllegallySmolCats", "babyelephantgifs", "AnimalsBeingBros", "goldenretrievers",
+    )
+
+    _RSS_SUBREDDITS = _CORE_SUBREDDITS + _ROTATING_SUBREDDITS
+
     _cursor = 0
     _listing_cursor = 0
-    _BATCH = 8  # subreddits per cycle
+    _ROTATE_PER_CYCLE = 4  # long-tail subs added on top of the core each cycle
 
     # Rotate the listing each cycle so the pool keeps changing: today's top,
     # this week's top, and what's hot right now -- a deep, refreshing well.
@@ -70,7 +74,14 @@ class RedditRssSource:
 
     def __init__(self, subreddits: tuple[str, ...] | None = None,
                  listings: tuple[str, ...] | None = None):
-        self.subreddits = tuple(subreddits or self._RSS_SUBREDDITS)
+        # If a custom list is given (tests), use it verbatim as the core.
+        if subreddits is not None:
+            self.core = tuple(subreddits)
+            self.rotating: tuple[str, ...] = ()
+        else:
+            self.core = self._CORE_SUBREDDITS
+            self.rotating = self._ROTATING_SUBREDDITS
+        self.subreddits = self.core + self.rotating
         self.listings = listings  # None => rotate through _LISTINGS
 
     def _listing(self) -> str:
@@ -80,15 +91,16 @@ class RedditRssSource:
         return lst
 
     def _batch(self) -> tuple[str, ...]:
-        """Return the next rotating slice of subreddits for this cycle."""
-        subs = self.subreddits
-        if len(subs) <= self._BATCH:
-            return subs
+        """Core hubs EVERY cycle (never miss a breakout) + a rotating slice of
+        the long tail for variety."""
+        if not self.rotating:
+            return self.core
         cls = type(self)
-        start = cls._cursor % len(subs)
-        picked = [subs[(start + i) % len(subs)] for i in range(self._BATCH)]
-        cls._cursor = (start + self._BATCH) % len(subs)
-        return tuple(picked)
+        n = self._ROTATE_PER_CYCLE
+        start = cls._cursor % len(self.rotating)
+        picked = [self.rotating[(start + i) % len(self.rotating)] for i in range(n)]
+        cls._cursor = (start + n) % len(self.rotating)
+        return self.core + tuple(picked)
 
     def _get_feed_bytes(self, client: httpx.Client, url: str) -> bytes | None:
         """Fetch a feed with a couple of polite retries. Reddit rate-limits
