@@ -29,7 +29,7 @@ from . import captioning, categories, dedup, learning, pipeline, settings_store
 from .activity import log
 from .db import session_scope
 from .models import Candidate, CandidateStatus, DailyStat
-from .publishing import PublishError, get_client
+from .publishing import PublishError, PublishUncertainError, get_client
 from .safety import evaluate, evaluate_text
 from .safety.base import SafetyContext
 
@@ -327,8 +327,16 @@ def post_one() -> bool:
         caption = _build_caption(cand)
         try:
             result = get_client().post_image(cand.local_path, caption=caption)
+        except PublishUncertainError as exc:
+            # We CANNOT tell if the tweet actually went out. Do NOT release the
+            # dedup reservation and do NOT requeue -- the only safe move is to
+            # retire this image permanently rather than risk a real duplicate.
+            _mark(cand.id, CandidateStatus.FAILED.value,
+                  f"uncertain publish result (not retried): {exc}")
+            _record_error("post_one", exc)
+            return False
         except PublishError as exc:
-            # Posting failed -> release the reservation so it can retry later.
+            # Nothing was sent to X (e.g. media upload failed) -> safe to retry.
             dedup.release_posted(cand.phash)
             _mark(cand.id, CandidateStatus.QUEUED.value, f"publish failed: {exc}")
             _record_error("post_one", exc)

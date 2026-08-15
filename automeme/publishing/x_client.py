@@ -30,7 +30,13 @@ except Exception:  # pragma: no cover
 
 
 class PublishError(Exception):
-    pass
+    """A failure that happened BEFORE anything was sent to X -- safe to retry."""
+
+
+class PublishUncertainError(PublishError):
+    """The tweet request may have succeeded on X's side even though we could
+    not confirm it (e.g. response timeout). NEVER retry/release dedup for this;
+    treat the image as posted (better to skip a meme than double-post it)."""
 
 
 @dataclass
@@ -88,16 +94,25 @@ class XClient:
         self._ensure_write()
         try:
             media = self._api_v1.media_upload(filename=local_path)  # type: ignore
-            # Use the STRING media id: the numeric id overflows in the v2 API and
-            # triggers "Your media IDs are invalid".
-            media_id = getattr(media, "media_id_string", None) or str(media.media_id)
+        except Exception as exc:  # noqa: BLE001
+            # Nothing was sent to X yet -> safe to retry this image later.
+            raise PublishError(f"failed to upload media: {exc}") from exc
+
+        media_id = getattr(media, "media_id_string", None) or str(media.media_id)
+        try:
             resp = self._client_v2.create_tweet(  # type: ignore
                 text=caption or None,
                 media_ids=[media_id],
             )
             post_id = str(resp.data["id"])
         except Exception as exc:  # noqa: BLE001
-            raise PublishError(f"failed to publish: {exc}") from exc
+            # UNSAFE to assume this failed on X's side too (could be a response
+            # timeout after the tweet was actually created). Raise a distinct
+            # error so the caller does NOT release the dedup reservation --
+            # better to skip this image than risk posting it again for real.
+            raise PublishUncertainError(
+                f"tweet may have been created but confirmation failed: {exc}"
+            ) from exc
         return PublishResult(post_id=post_id, dry_run=False)
 
     def delete_post(self, post_id: str) -> bool:
