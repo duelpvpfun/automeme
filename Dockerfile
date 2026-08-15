@@ -13,8 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Persist the SQLite DB + downloaded images outside the image layer.
+# NOTE: no VOLUME instruction -- attach a persistent volume at /data in your
+# host (Railway Volume / Render disk / docker -v). Railway rejects VOLUME.
 ENV AUTOMEME_DATA_DIR=/data
-VOLUME ["/data"]
 
 EXPOSE 8080
 
