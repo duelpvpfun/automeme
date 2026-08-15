@@ -46,7 +46,9 @@ class RedditRssSource:
     name = "reddit_rss"
 
     def __init__(self, subreddits: tuple[str, ...] | None = None,
-                 listings: tuple[str, ...] = ("rising", "hot")):
+                 listings: tuple[str, ...] = ("top", "hot")):
+        # "top" (t=day) = the day's most-upvoted posts, already ranked by score;
+        # "hot" catches things still climbing. Together = best-of-day performers.
         self.subreddits = tuple(subreddits or DEFAULT_SUBREDDITS)
         self.listings = listings
 
@@ -63,6 +65,8 @@ class RedditRssSource:
     def _fetch_feed(self, client: httpx.Client, sub: str, listing: str,
                     max_age_h: float) -> list[DiscoveredItem]:
         url = f"https://www.reddit.com/r/{sub}/{listing}/.rss?limit=25"
+        if listing == "top":
+            url += "&t=day"  # day's top-upvoted posts
         content = self._get_feed_bytes(client, url)
         if not content:
             return []

@@ -94,6 +94,46 @@ def force_post() -> dict:
     return {"posted": posted, **diagnose()}
 
 
+def nuke_and_restart() -> dict:
+    """Delete every posted tweet from X, wipe ALL local data, and re-discover
+    from scratch. Full clean slate. Use with care."""
+    from ..models import PostedHash
+    from .. import scheduler
+    deleted_tweets = 0
+    with session_scope() as s:
+        posted = list(
+            s.execute(
+                select(Candidate).where(
+                    Candidate.status == CandidateStatus.POSTED.value,
+                    Candidate.x_post_id != "",
+                )
+            ).scalars()
+        )
+        post_ids = [c.x_post_id for c in posted]
+    # Delete live tweets from X.
+    client = get_client()
+    for pid in post_ids:
+        try:
+            if client.delete_post(pid):
+                deleted_tweets += 1
+        except Exception:  # noqa: BLE001
+            pass
+    # Wipe every candidate + dedup memory.
+    removed = 0
+    with session_scope() as s:
+        for c in s.execute(select(Candidate)).scalars():
+            s.delete(c)
+            removed += 1
+        for h in s.execute(select(PostedHash)).scalars():
+            s.delete(h)
+    log("nuke", f"deleted {deleted_tweets} tweets, wiped {removed} candidates",
+        level="warning")
+    # Kick a fresh discovery in the background.
+    import threading
+    threading.Thread(target=scheduler.run_discovery, daemon=True).start()
+    return {"deleted_tweets": deleted_tweets, "removed": removed}
+
+
 def reset_discovered(keep_posted: bool = True) -> dict:
     """Clear discovered/queued/rejected candidates so you can watch a fresh run.
 

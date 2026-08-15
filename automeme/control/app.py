@@ -249,6 +249,10 @@ def create_app(start_scheduler: bool = True) -> FastAPI:
         body = await request.json()
         return service.reset_discovered(keep_posted=bool(body.get("keep_posted", True)))
 
+    @app.post("/api/actions/nuke", dependencies=api_dep)
+    def api_nuke():
+        return service.nuke_and_restart()
+
     @app.get("/api/logs", dependencies=api_dep)
     def api_logs(after_id: int = 0, limit: int = 100):
         return service.logs_since(after_id=after_id, limit=min(limit, 300))

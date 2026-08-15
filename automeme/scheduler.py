@@ -209,19 +209,24 @@ def _pick_candidate() -> Candidate | None:
                 and _get_count("subject", c.subject) < max_subj
             )
 
-        # First pass: honor the preferred category. Second pass: any category
-        # (so we still post if only one type is currently available).
-        for want_preferred in (True, False):
+        strict = bool(settings_store.get("strict_alternate", True))
+
+        # Pass 1: the preferred (opposite) category, best quality first.
+        if preferred is not None:
             for c in rows:
-                if not eligible(c):
-                    continue
-                if want_preferred and preferred is not None:
-                    if categories.category_for(c.subject) != preferred:
-                        continue
+                if eligible(c) and categories.category_for(c.subject) == preferred:
+                    s.expunge(c)
+                    return c
+            # Strict alternation: if the required category has nothing ready,
+            # skip this slot rather than posting two of the same type in a row.
+            if strict:
+                return None
+
+        # Pass 2: no preference (first post) or non-strict fallback -> best overall.
+        for c in rows:
+            if eligible(c):
                 s.expunge(c)
                 return c
-            if preferred is None:
-                break
     return None
 
 

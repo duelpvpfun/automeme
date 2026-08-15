@@ -315,6 +315,16 @@ async function pollLogs() {
   }
 }
 
+document.getElementById("btnNuke").onclick = async () => {
+  if (!confirm("⚠️ DELETE every tweet this bot posted to @icr8meme, wipe all local data, and start completely fresh?\n\nThis cannot be undone.")) return;
+  const el = document.getElementById("diagLine");
+  el.className = "banner bad"; el.innerHTML = "💣 <span>Deleting posts & wiping… </span>";
+  const r = await api("/api/actions/nuke", { method: "POST" });
+  el.className = "banner warn";
+  el.innerHTML = `💣 <span>Deleted ${r.deleted_tweets} tweet(s), wiped ${r.removed} items. Re-discovering fresh…</span>`;
+  loadStats(); loadDiagnose();
+};
+
 document.getElementById("btnReset").onclick = async () => {
   if (!confirm("Start fresh? This clears all discovered/queued memes (keeps already-posted history so it won't repost). You'll watch it rebuild from zero.")) return;
   const r = await api("/api/actions/reset", { method: "POST", body: JSON.stringify({ keep_posted: true }) });

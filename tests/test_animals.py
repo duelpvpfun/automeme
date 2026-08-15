@@ -65,3 +65,27 @@ def test_prop_without_name(env):
 
 def test_no_name_no_prop_empty(env):
     assert captioning.animal_caption(_cand("aww", "just a happy floof")) == ""
+
+
+def test_strict_alternation_skips_when_wrong_category(env):
+    """After a meme, if only memes are queued, strict mode posts nothing."""
+    from automeme import scheduler, settings_store
+    from automeme.db import session_scope
+    from automeme.models import Candidate, CandidateStatus
+    from datetime import datetime, timezone
+
+    settings_store.update({"alternate_meme_animal": True, "strict_alternate": True,
+                           "queue_ttl_hours": 999, "max_same_source_per_day": 99,
+                           "max_same_subject_per_day": 99})
+    with session_scope() as s:
+        # last posted = a meme
+        s.add(Candidate(source="f", source_id="p", subject="memes", phash="p",
+                        image_url="http://x", status=CandidateStatus.POSTED.value,
+                        posted_at=datetime.now(timezone.utc)))
+        # only another MEME is queued (no animal)
+        s.add(Candidate(source="f", source_id="q", subject="memes", phash="q",
+                        image_url="http://x", local_path="/tmp/q.png",
+                        quality_score=90, status=CandidateStatus.QUEUED.value))
+    # preferred = animal, none available, strict => None
+    assert scheduler._pick_candidate() is None
+

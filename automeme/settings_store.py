@@ -47,6 +47,7 @@ DEFAULTS: dict[str, Any] = {
 
     # Meme vs cute-animal mix
     "alternate_meme_animal": True,     # take turns between memes and animals
+    "strict_alternate": True,          # never post 2 of the same type in a row
     "animal_name_caption": True,       # caption animal posts with the pet's name
 
     # Safety thresholds (higher = stricter)
