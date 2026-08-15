@@ -48,3 +48,13 @@ def test_picker_skips_stale(env, monkeypatch):
     fresh = _add(2, hours_old=1, quality=60)
     picked = scheduler._pick_candidate()
     assert picked is not None and picked.id == fresh
+
+
+def test_picker_prefers_highest_quality_among_fresh(env):
+    settings_store.update({"queue_ttl_hours": 48, "alternate_meme_animal": False,
+                           "max_same_source_per_day": 99, "max_same_subject_per_day": 99})
+    _add(1, hours_old=2, quality=60)
+    best = _add(2, hours_old=3, quality=95)
+    _add(3, hours_old=1, quality=70)
+    picked = scheduler._pick_candidate()
+    assert picked is not None and picked.id == best  # best quality wins

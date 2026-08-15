@@ -191,9 +191,9 @@ def _pick_candidate() -> Candidate | None:
             s.execute(
                 select(Candidate)
                 .where(Candidate.status == CandidateStatus.QUEUED.value)
-                # Freshest-discovered first (not just highest quality), so new
-                # viral memes jump the queue instead of waiting behind a backlog.
-                .order_by(Candidate.created_at.desc())
+                # Best-quality first. The queue is already kept fresh by the TTL
+                # + trim, so within that fresh pool we always post the BEST one.
+                .order_by(Candidate.quality_score.desc())
                 .limit(120)
             ).scalars()
         )
