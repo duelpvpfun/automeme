@@ -72,7 +72,9 @@ def create_app(start_scheduler: bool = True) -> FastAPI:
         settings_store.ensure_defaults()
         # Register discovery sources.
         from .. import discovery  # noqa: F401
-        from ..discovery import memeapi, reddit, reddit_api, x_source  # noqa: F401
+        from ..discovery import (  # noqa: F401
+            memeapi, reddit, reddit_api, reddit_rss, x_source,
+        )
 
         # Env-driven bootstrap so the bot can go live from environment variables
         # alone (e.g. on Railway, where the DB starts empty at defaults).
