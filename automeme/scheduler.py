@@ -146,7 +146,9 @@ def _should_post_now() -> tuple[bool, str]:
     if not _within_active_hours():
         return False, "outside active hours"
 
-    posted_today = _get_count("total")
+    # Count ACTUAL posts today (source of truth), not just the daily counter,
+    # so counter drift can never wrongly block or over-post.
+    posted_today = _posts_today()
     if posted_today >= int(settings_store.get("max_posts_per_day", 12)):
         return False, "daily hard cap reached"
     if posted_today >= int(settings_store.get("posts_per_day", 8)):
@@ -161,6 +163,20 @@ def _should_post_now() -> tuple[bool, str]:
         if gap_min < required:
             return False, f"spacing: {gap_min:.0f}m < {required}m"
     return True, "ok"
+
+
+def _posts_today() -> int:
+    from sqlalchemy import func
+    with session_scope() as s:
+        return int(
+            s.execute(
+                select(func.count()).select_from(Candidate).where(
+                    Candidate.status == CandidateStatus.POSTED.value,
+                    Candidate.posted_at.isnot(None),
+                    func.date(Candidate.posted_at) == _now().strftime("%Y-%m-%d"),
+                )
+            ).scalar_one()
+        )
 
 
 def _last_posted_category() -> str | None:
@@ -475,6 +491,22 @@ def refresh_metrics() -> None:
 _scheduler = None
 
 
+def recover_stranded() -> None:
+    """Requeue candidates stuck in POSTING (e.g. from a crash/redeploy mid-post),
+    so the queue never silently leaks."""
+    n = 0
+    with session_scope() as s:
+        for c in s.execute(
+            select(Candidate).where(Candidate.status == CandidateStatus.POSTING.value)
+        ).scalars():
+            c.status = CandidateStatus.QUEUED.value
+            c.status_reason = "recovered from interrupted post"
+            n += 1
+    if n:
+        log("recovered_stranded", f"requeued {n} interrupted candidates",
+            level="warning")
+
+
 def start() -> None:
     global _scheduler
     if not _APS_OK:
@@ -482,6 +514,7 @@ def start() -> None:
         return
     if _scheduler is not None:
         return
+    recover_stranded()
     _scheduler = BackgroundScheduler(timezone="UTC")
 
     disc_min = int(settings_store.get("discovery_interval_minutes", 30))
