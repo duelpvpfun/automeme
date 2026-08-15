@@ -33,11 +33,21 @@
           <button id="btnMode" class="btn">🔁 Mode</button>
           <button id="btnDiscover" class="btn">🔍 Find memes now</button>
           <button id="btnPostNow" class="btn">📤 Post one now</button>
+          <button id="btnReset" class="btn warn">♻️ Start fresh</button>
           <button id="btnPurge" class="btn warn">🗑 Clear queue</button>
           <button id="btnKill" class="btn danger">🛑 Emergency stop</button>
         </div>
       </section>
       <div id="diagLine" class="banner" style="margin-top:10px"></div>
+
+      <!-- Live terminal: streams what the bot is doing right now -->
+      <section class="live-term">
+        <div class="live-head">
+          <span>🖥️ Live activity <span id="liveDot" class="dot"></span></span>
+          <label class="muted"><input type="checkbox" id="liveFollow" checked /> auto-scroll</label>
+        </div>
+        <pre id="liveLog" class="term"></pre>
+      </section>
 
       <main>
         <section id="tab-dashboard" class="tab active">

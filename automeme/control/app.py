@@ -86,10 +86,16 @@ def create_app(start_scheduler: bool = True) -> FastAPI:
 
         if start_scheduler:
             scheduler.start()
-            # Kick off one discovery cycle right away so the queue fills fast
-            # instead of waiting a full interval after boot.
+            # Fully hands-off boot: discover immediately, then try to post the
+            # first one right away (don't wait for the 5-min tick). Runs in a
+            # thread so startup isn't blocked.
             import threading
-            threading.Thread(target=scheduler.run_discovery, daemon=True).start()
+
+            def _boot_cycle() -> None:
+                scheduler.run_discovery()
+                scheduler.post_one()
+
+            threading.Thread(target=_boot_cycle, daemon=True).start()
 
     @app.on_event("shutdown")
     def _shutdown() -> None:
@@ -223,5 +229,14 @@ def create_app(start_scheduler: bool = True) -> FastAPI:
     @app.post("/api/actions/post_now", dependencies=api_dep)
     def api_force_post():
         return service.force_post()
+
+    @app.post("/api/actions/reset", dependencies=api_dep)
+    async def api_reset(request: Request):
+        body = await request.json()
+        return service.reset_discovered(keep_posted=bool(body.get("keep_posted", True)))
+
+    @app.get("/api/logs", dependencies=api_dep)
+    def api_logs(after_id: int = 0, limit: int = 100):
+        return service.logs_since(after_id=after_id, limit=min(limit, 300))
 
     return app

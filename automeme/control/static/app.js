@@ -293,6 +293,37 @@ document.getElementById("btnMode").onclick = async () => {
   loadStats();
 };
 
+// --- live terminal ---
+let _lastLogId = 0;
+function esc(t) { return (t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+async function pollLogs() {
+  const r = await api(`/api/logs?after_id=${_lastLogId}`);
+  if (!r || !r.lines) return;
+  const box = document.getElementById("liveLog");
+  if (!box) return;
+  for (const l of r.lines) {
+    const ts = (l.ts || "").replace("T", " ").slice(11, 19);
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="l-ts">${ts}</span> <span class="l-ev">${esc(l.event)}</span> <span class="l-${l.level}">${esc(l.message)}</span>`;
+    box.appendChild(line);
+  }
+  _lastLogId = r.last_id || _lastLogId;
+  // cap to last 300 lines
+  while (box.childElementCount > 300) box.removeChild(box.firstChild);
+  if (r.lines.length && document.getElementById("liveFollow").checked) {
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+document.getElementById("btnReset").onclick = async () => {
+  if (!confirm("Start fresh? This clears all discovered/queued memes (keeps already-posted history so it won't repost). You'll watch it rebuild from zero.")) return;
+  const r = await api("/api/actions/reset", { method: "POST", body: JSON.stringify({ keep_posted: true }) });
+  const el = document.getElementById("diagLine");
+  el.className = "banner warn";
+  el.innerHTML = `♻️ <span>Cleared ${r.removed} old items. Click "Find memes now" or wait for the next cycle.</span>`;
+  loadStats(); loadDiagnose();
+};
+
 async function loadDiagnose() {
   const d = await api("/api/diagnose");
   if (!d) return;
@@ -329,4 +360,8 @@ function loadTab(tab) {
 }
 
 loadStats();
+loadDiagnose();
+pollLogs();
 setInterval(loadStats, 15000);
+setInterval(loadDiagnose, 15000);
+setInterval(pollLogs, 3000);   // live terminal tail

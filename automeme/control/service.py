@@ -94,6 +94,29 @@ def force_post() -> dict:
     return {"posted": posted, **diagnose()}
 
 
+def reset_discovered(keep_posted: bool = True) -> dict:
+    """Clear discovered/queued/rejected candidates so you can watch a fresh run.
+
+    By default keeps POSTED history (and their dedup memory) so it won't repost
+    what already went out. Set keep_posted=False to wipe everything.
+    """
+    from ..models import PostedHash
+    removed = 0
+    with session_scope() as s:
+        stmt = select(Candidate)
+        if keep_posted:
+            stmt = stmt.where(Candidate.status != CandidateStatus.POSTED.value)
+        for c in s.execute(stmt).scalars():
+            s.delete(c)
+            removed += 1
+        if not keep_posted:
+            for h in s.execute(select(PostedHash)).scalars():
+                s.delete(h)
+    log("reset", f"cleared {removed} candidates (keep_posted={keep_posted})",
+        level="warning")
+    return {"removed": removed, "keep_posted": keep_posted}
+
+
 # -- candidate listings ------------------------------------------------------
 
 
@@ -326,3 +349,28 @@ def activity(limit: int = 200) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def logs_since(after_id: int = 0, limit: int = 100) -> dict:
+    """Return activity log rows with id > after_id (for a live tail/terminal)."""
+    from ..models import ActivityLog
+    with session_scope() as s:
+        rows = list(
+            s.execute(
+                select(ActivityLog)
+                .where(ActivityLog.id > after_id)
+                .order_by(ActivityLog.id.asc())
+                .limit(limit)
+            ).scalars()
+        )
+        items = [
+            {
+                "id": r.id,
+                "ts": r.ts.isoformat() if r.ts else "",
+                "level": r.level,
+                "event": r.event,
+                "message": r.message,
+            }
+            for r in rows
+        ]
+    return {"last_id": items[-1]["id"] if items else after_id, "lines": items}
