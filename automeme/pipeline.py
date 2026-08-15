@@ -20,7 +20,7 @@ from .activity import log
 from .db import session_scope
 from .discovery.base import DiscoveredItem
 from .discovery.registry import get_enabled_sources
-from .models import Blocklist, Candidate, CandidateStatus
+from .models import Blocklist, Candidate, CandidateStatus, SeenSource
 from .safety import SafetyVerdict, evaluate
 from .safety.base import SafetyContext
 
@@ -53,11 +53,25 @@ def _subject_allowed(subject: str) -> bool:
 
 
 def _already_seen(source: str, source_id: str) -> bool:
+    """True if this exact source post was ever discovered before -- checked
+    against a PERMANENT record (SeenSource), not the Candidate table, so it
+    still works even after the Candidate row is deleted post-posting."""
     with session_scope() as s:
-        stmt = select(Candidate.id).where(
-            Candidate.source == source, Candidate.source_id == source_id
+        stmt = select(SeenSource.id).where(
+            SeenSource.source == source, SeenSource.source_id == source_id
         )
         return s.execute(stmt).first() is not None
+
+
+def _mark_seen(source: str, source_id: str) -> None:
+    with session_scope() as s:
+        exists = s.execute(
+            select(SeenSource.id).where(
+                SeenSource.source == source, SeenSource.source_id == source_id
+            )
+        ).first()
+        if not exists:
+            s.add(SeenSource(source=source, source_id=source_id))
 
 
 def _persist(item: DiscoveredItem, info: imaging.ImageInfo, quality: float,
@@ -158,6 +172,10 @@ def ingest(limit_per_source: int = 60) -> dict:
             if _already_seen(item.source, item.source_id):
                 summary["seen"] += 1
                 continue
+            # Record it as seen NOW (permanently) so it can never be treated as
+            # new again on a future cycle, even after its Candidate row is
+            # deleted post-posting.
+            _mark_seen(item.source, item.source_id)
 
             try:
                 info = imaging.analyze(item.image_url)

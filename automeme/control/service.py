@@ -95,9 +95,10 @@ def force_post() -> dict:
 
 
 def nuke_and_restart() -> dict:
-    """Delete every posted tweet from X, wipe ALL local data, and re-discover
-    from scratch. Full clean slate. Use with care."""
-    from ..models import PostedHash
+    """Delete every posted tweet from X, wipe ALL local data (including the
+    permanent seen/posted memory), and re-discover from scratch. Full clean
+    slate -- it will look for genuinely new content. Use with care."""
+    from ..models import PostedHash, SeenSource
     from .. import scheduler
     deleted_tweets = 0
     with session_scope() as s:
@@ -118,7 +119,7 @@ def nuke_and_restart() -> dict:
                 deleted_tweets += 1
         except Exception:  # noqa: BLE001
             pass
-    # Wipe every candidate + dedup memory.
+    # Wipe every candidate + all dedup/seen memory.
     removed = 0
     with session_scope() as s:
         for c in s.execute(select(Candidate)).scalars():
@@ -126,8 +127,10 @@ def nuke_and_restart() -> dict:
             removed += 1
         for h in s.execute(select(PostedHash)).scalars():
             s.delete(h)
-    log("nuke", f"deleted {deleted_tweets} tweets, wiped {removed} candidates",
-        level="warning")
+        for sn in s.execute(select(SeenSource)).scalars():
+            s.delete(sn)
+    log("nuke", f"deleted {deleted_tweets} tweets, wiped {removed} candidates "
+        "+ all seen/posted memory", level="warning")
     # Kick a fresh discovery in the background.
     import threading
     threading.Thread(target=scheduler.run_discovery, daemon=True).start()

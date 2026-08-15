@@ -156,6 +156,23 @@ class PostedHash(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class SeenSource(Base):
+    """Permanent record of every (source, source_id) ever discovered.
+
+    Candidate rows get deleted once posted (to keep the queue lean), but this
+    table never shrinks -- so a Reddit post we've already seen/posted can never
+    be re-discovered and treated as new, even after its Candidate row is gone.
+    """
+
+    __tablename__ = "seen_sources"
+    __table_args__ = (UniqueConstraint("source", "source_id", name="uq_seen_source"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(64), index=True)
+    source_id: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class TasteExemplar(Base):
     """Reference posts that define the account's desired taste (e.g. @s8n).
 
